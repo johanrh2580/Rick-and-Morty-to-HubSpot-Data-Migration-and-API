@@ -1,8 +1,8 @@
 const express = require('express');
 const hubspot = require('@hubspot/api-client');
 const winston = require('winston');
-const webhookRoutes = require('./webhookRoutes');
-const migrationRoutes = require('./migrationRoutes'); // Asegúrate de que este archivo exista
+const webhookRoutes = require('./routes/webhookRoutes');
+
 
 const app = express();
 const port = process.env.PORT || 3000;
