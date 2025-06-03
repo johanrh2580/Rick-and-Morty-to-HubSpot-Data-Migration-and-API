@@ -1,7 +1,11 @@
 const express = require('express');
 const hubspot = require('@hubspot/api-client');
 const winston = require('winston');
-const webhookRoutes = require('./routes/webhookRoutes');
+
+// Importa el módulo completo.
+// Si webhookRoutes.js exporta un objeto con 'router', 'upsertContact', 'upsertCompany',
+// entonces puedes desestructurarlos aquí.
+const { router: webhookRouter, upsertContact, upsertCompany } = require('./routes/webhookRoutes');
 
 
 const app = express();
@@ -18,9 +22,10 @@ const logger = winston.createLogger({
 
 app.use(express.json());
 
-// Routes
-app.use('./routes/webhookRoutes', webhookRoutes);
-
+// Montar el router de webhooks. Elige la ruta base que prefieras (e.g., '/webhooks' o '/').
+// Si tus rutas en webhookRoutes.js son como app.post('/some-event'), y quieres que sean accesibles en /webhooks/some-event,
+// entonces usa '/webhooks'. Si quieres que sean accesibles en /some-event, usa '/'.
+app.use('/webhooks', webhookRouter); // <= CAMBIO AQUÍ: Usa una ruta base y el router importado
 
 // Sync endpoint to manually sync all contacts and companies
 app.post('/sync', async (req, res) => {
@@ -53,7 +58,6 @@ app.post('/sync', async (req, res) => {
             const company = await sourceClient.crm.companies.basicApi.getById(companyId, ['name']);
             company_name = company.properties.name;
           }
-          const contactData = { ...contact.properties, company_name };
           await upsertContact(contactData); // Reuse upsertContact from webhookRoutes
           contactsSynced++;
           logger.info('Contact synced', { character_id: contact.properties.character_id });
@@ -91,8 +95,8 @@ app.post('/sync', async (req, res) => {
   }
 });
 
-// Re-export upsert functions for use in /sync endpoint
-const webhookRoutes = require('./routes/webhookRoutes');
+// ¡ELIMINA esta línea duplicada!
+// const webhookRoutes = require('./routes/webhookRoutes');
 
 app.listen(port, () => {
   logger.info(`Server running on port ${port}`);
