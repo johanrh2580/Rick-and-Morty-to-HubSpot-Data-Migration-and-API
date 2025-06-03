@@ -174,16 +174,19 @@ async function createAssociation(hubspotClient, contactHubspotId, companyHubspot
 
     try {
         // Define the association types and objects for API v4
-        await hubspotClient.crm.associations.v4.basicApi.create(
-            'contact',
-            contactHubspotId,
-            'company',
-            companyHubspotId,
-            [{
-                associationCategory: 'HUBSPOT_DEFINED',
-                associationTypeId: 1 // Standard association type for Contact to Company
-            }]
+       await hubspotClient.crm.associations.v4.basicApi.create(
+          'contact',
+          contactHubspotId,
+          'company',
+          companyHubspotId,
+          [
+            {
+              associationCategory: 'HUBSPOT_DEFINED',
+              associationTypeId: 1 // tipo contacto ↔ empresa estándar
+            }
+          ]
         );
+
         console.log(`INFO: Association created: Contact '${characterName}' (HubSpot ID: ${contactHubspotId}) associated with Company (HubSpot ID: ${companyHubspotId}).`);
     } catch (error) {
         console.error(`ERROR: Failed to create association between contact ${contactHubspotId} and company ${companyHubspotId} for '${characterName}' (ID: ${characterId}). Error details:`, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
