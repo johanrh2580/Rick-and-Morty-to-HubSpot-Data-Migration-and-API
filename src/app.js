@@ -2,7 +2,7 @@ const express = require('express');
 const hubspot = require('@hubspot/api-client');
 const winston = require('winston');
 const webhookRoutes = require('./webhookRoutes');
-const migrationRoutes = require('./migrationRoutes'); // Assuming you have this file for /migrate endpoint
+const migrationRoutes = require('./migrationRoutes'); // Asegúrate de que este archivo exista
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -20,7 +20,7 @@ app.use(express.json());
 
 // Routes
 app.use('/webhook', webhookRoutes);
-app.use('/migrate', migrationRoutes); // Assuming migration routes are in a separate file
+app.use('/migrate', migrationRoutes);
 
 // Sync endpoint to manually sync all contacts and companies
 app.post('/sync', async (req, res) => {
