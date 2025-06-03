@@ -7,10 +7,11 @@ const { getCharacterById, getLocationByUrl, getCharactersInfo } = require('../cl
  * @param {string} email - The email address to validate.
  * @returns {boolean} - True if the email is valid, false otherwise.
  */
-const isValidEmail = (email) => {
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(email) {
+  const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   return re.test(email);
-};
+}
+
 
 /**
  * Maps properties from a Rick and Morty character object to HubSpot Contact properties.
