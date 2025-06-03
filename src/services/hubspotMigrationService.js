@@ -20,9 +20,11 @@ const isValidEmail = (email) => {
 const characterToContactMapping = (character) => {
   // Generate a valid email format
   const cleanName = character.name
-    .toLowerCase()
-    .replace(/\s+/g, '')      // Remove spaces
-    .replace(/[^a-z0-9]/g, ''); // Remove special characters
+  .toLowerCase()
+  .replace(/[^a-z0-9]/g, ''); 
+
+const email = `${cleanName}${character.id}@rickandmorty.com`;
+
   
   const properties = {
     firstname: character.name.split(' ')[0], // Extract first name
@@ -38,9 +40,10 @@ const characterToContactMapping = (character) => {
   };
   
   // Fallback email if generated is invalid
-  if (!isValidEmail(properties.email)) {
-    properties.email = `character${character.id}@rickandmorty.com`;
+  if (!isValidEmail(email)) {
+    email = `character${character.id}@rickandmorty.com`;
   }
+
   
   return { properties };
 };
