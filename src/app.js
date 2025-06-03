@@ -1,7 +1,7 @@
 const express = require('express');
 const hubspot = require('@hubspot/api-client');
 const winston = require('winston');
-const axios = require('axios');
+const axios = require('axios'); // Asegúrate de que axios esté instalado: npm install axios
 require('dotenv').config();
 
 const { router: webhookRouter, upsertContact, upsertCompany } = require('./routes/webhookRoutes');
@@ -24,19 +24,23 @@ app.use('/webhooks', webhookRouter);
 // 👉 NUEVA FUNCIÓN: obtiene el nombre de la compañía asociada a un contacto usando REST + axios
 async function getCompanyNameForContact(contactId, token) {
   try {
-    const url = `https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/companies`;
-    const response = await axios.get(url, {
+    // Primero, obtén las asociaciones de la API de Asociaciones v4
+    const associationsUrl = `https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/companies`;
+    const associationsResponse = await axios.get(associationsUrl, {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       }
     });
 
-    if (!response.data.results || response.data.results.length === 0) return null;
+    if (!associationsResponse.data.results || associationsResponse.data.results.length === 0) {
+      return null; // No hay compañías asociadas
+    }
 
-    const companyId = response.data.results[0].toObjectId;
+    const companyId = associationsResponse.data.results[0].toObjectId;
+
+    // Luego, obtén los detalles de la compañía
     const companyDetailsUrl = `https://api.hubapi.com/crm/v3/objects/companies/${companyId}?properties=name`;
-
     const companyResponse = await axios.get(companyDetailsUrl, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -46,8 +50,9 @@ async function getCompanyNameForContact(contactId, token) {
 
     return companyResponse.data.properties.name || null;
   } catch (err) {
-    logger.error('Failed to fetch associated company', { contactId, error: err.message });
-    return null;
+    // Es importante loguear el error para entender por qué falla
+    logger.error('Failed to fetch associated company for contact', { contactId, error: err.message, stack: err.stack });
+    return null; // Devuelve null si hay un error para no detener la sincronización
   }
 }
 
@@ -75,8 +80,17 @@ app.post('/sync', async (req, res) => {
       ]);
 
       for (const contact of contactsResponse.results) {
+        // 👉 AÑADIR ESTA VALIDACIÓN AQUÍ
+        if (!contact.properties.character_id) {
+          logger.warn('Skipping contact due to missing character_id', { hubspotId: contact.id, email: contact.properties.email });
+          continue; // Pasa al siguiente contacto en el bucle
+        }
+
         try {
-          const company_name = await getCompanyNameForContact(contact.id, process.env.HUBSPOT_SOURCE_TOKEN);
+          // Asegúrate de que contact.id está presente antes de llamar a getCompanyNameForContact
+          const company_name = contact.id
+            ? await getCompanyNameForContact(contact.id, process.env.HUBSPOT_SOURCE_TOKEN)
+            : null;
 
           const contactData = {
             ...contact.properties,
@@ -104,7 +118,7 @@ app.post('/sync', async (req, res) => {
 
     logger.info('Contacts synced', { count: contactsSynced });
 
-    // Sync companies
+    // Sync companies (esta sección no necesita cambios en este momento)
     let companiesSynced = 0;
     after = undefined;
 
