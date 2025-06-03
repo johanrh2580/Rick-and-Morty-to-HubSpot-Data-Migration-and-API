@@ -19,8 +19,8 @@ const logger = winston.createLogger({
 app.use(express.json());
 
 // Routes
-app.use('/webhook', webhookRoutes);
-app.use('/migrate', migrationRoutes);
+app.use('./routes/webhookRoutes', webhookRoutes);
+
 
 // Sync endpoint to manually sync all contacts and companies
 app.post('/sync', async (req, res) => {
@@ -92,7 +92,7 @@ app.post('/sync', async (req, res) => {
 });
 
 // Re-export upsert functions for use in /sync endpoint
-const { upsertContact, upsertCompany } = require('./webhookRoutes');
+const { upsertContact, upsertCompany } = require('../routes/webhookRoutesRoutes');
 
 app.listen(port, () => {
   logger.info(`Server running on port ${port}`);
