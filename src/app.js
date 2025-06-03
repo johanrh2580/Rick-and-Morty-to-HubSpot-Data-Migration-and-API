@@ -4,7 +4,7 @@ const axios = require('axios');
 
 // Inicializa los clientes de HubSpot para la cuenta Origen y Espejo
 const hubspotClientSource = new hubspot.Client({ accessToken: process.env.HUBSPOT_SOURCE_TOKEN });
-const hubspotClientMirror = new hubspot.Client({ accessToken: process.env.HUBSPOT_MIRROR_TOKEN });
+const hubspotClientMirror = new hubspot.Client({ accessToken: process.env.HUBSPOT_MIRROR_TOKEN }); // CORRECCIÓN AQUÍ
 
 // Mapeo para almacenar correspondencia entre IDs de Compañías de Source y Mirror
 const companyIdMap = new Map();
@@ -124,9 +124,7 @@ async function syncContacts() {
               value: characterId
             }]
           }],
-          // <<<<<<<<<<<<<<<< ESTA ES LA LÍNEA CORREGIDA >>>>>>>>>>>>>>>>>>
-          properties: ['email', 'firstname', 'lastname', 'character_id', 'character_status', 'character_species', 'character_gender'], // Corrección: quitada la comilla extra en 'character_id'
-          // <<<<<<<<<<<<<<<<<<<<<<<<<<< FIN >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+          properties: ['email', 'firstname', 'lastname', 'character_id', 'character_status', 'character_species', 'character_gender'],
           limit: 1 // Solo necesitamos un resultado
         });
         if (searchResponse.results.length > 0) {
