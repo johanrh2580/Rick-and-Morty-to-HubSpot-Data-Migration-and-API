@@ -232,7 +232,7 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
               console.log(`DEBUG: Collected character: ${character.name} (ID: ${character.id})`);
           }
       }
-      console.log(`INFO: ${charactersToMigrate.length} characters identified for migration.');
+      console.log(`INFO: ${charactersToMigrate.length} characters identified for migration.`);
 
   } catch (error) {
       console.error('CRITICAL ERROR: Failed to fetch characters from Rick and Morty API during identification:', error.message);
