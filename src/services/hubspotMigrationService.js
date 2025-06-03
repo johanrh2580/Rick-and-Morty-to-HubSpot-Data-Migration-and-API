@@ -1,4 +1,4 @@
-
+// src/services/hubspotMigrationService.js
 const hubspot = require('@hubspot/api-client');
 const { isPrime } = require('../utils/math');
 const { getCharacterById, getLocationByUrl, getCharactersInfo } = require('../clients/rickAndMortyClient');
@@ -10,13 +10,13 @@ const { getCharacterById, getLocationByUrl, getCharactersInfo } = require('../cl
  */
 const characterToContactMapping = (character) => {
   const properties = {
-    firstname: character.name.split(' ')[0], // Extract first name
-    lastname: character.name.split(' ').slice(1).join(' ') || '', // Extract rest as last name
-    // Generate a more unique email to avoid collisions and fulfill HubSpot's common email requirement.
-    email: `${character.name.toLowerCase().replace(/\\s/g, '')}.${character.id}@rickandmorty.com`,
-    phone: '', // Phone number not available in the API
-    lifecyclestage: 'lead', // Default lifecycle stage for new contacts
-    character_id: character.id.toString(), // Ensure character_id is a string as per HubSpot property type
+    firstname: character.name,
+    lastname: '',
+    // Reemplazar espacios y caracteres no alfanuméricos por vacío para asegurar un formato válido.
+    email: `${character.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@rickandmorty.com`,
+    phone: '',
+    lifecyclestage: 'lead',
+    character_id: character.id.toString(),
     character_status: character.status,
     character_species: character.species,
     character_gender: character.gender,
@@ -150,12 +150,16 @@ async function createAssociation(hubspotClient, contactHubspotId, companyHubspot
 
     try {
         // Define the association types and objects.
+        // FIX: Corregir la llamada a v4.basicApi.create para incluir associationCategory y associationTypeId.
         await hubspotClient.crm.associations.v4.basicApi.create(
-            'contact',
+            'contacts', // fromObjectType debe ser plural
             contactHubspotId,
-            'company',
+            'companies', // toObjectType debe ser plural
             companyHubspotId,
-            'contact_to_company' // Standard association type
+            [{ // El último parámetro debe ser un array de objetos con category y typeId
+                associationCategory: 'HUBSPOT_DEFINED', // Categoría estándar de HubSpot
+                associationTypeId: 279 // ID para la asociación Contacto a Compañía
+            }]
         );
         console.log(`INFO: Association created: Contact '${characterName}' (HubSpot ID: ${contactHubspotId}) associated with Company (HubSpot ID: ${companyHubspotId}).`);
     } catch (error) {
@@ -185,6 +189,10 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
 
       // Collect all characters from all available pages
       let allCharacters = [];
+      // Asegúrate de que getCharactersInfo(i) devuelva los resultados de la página.
+      // Si tu getCharactersInfo solo devuelve la info.count,
+      // necesitarás una función que itere sobre las páginas reales de personajes.
+      // Asumo que getCharactersInfo(i) ya trae los 'results' de esa página.
       for (let i = 1; i <= totalPages; i++) {
           const pageResponse = await getCharactersInfo(i); // Fetch each page
           if (pageResponse && pageResponse.results) {
