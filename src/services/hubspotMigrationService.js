@@ -74,7 +74,6 @@ async function findOrCreateContact(hubspotClient, characterData) {
     const contactProperties = characterToContactMapping(characterData).properties;
 
     try {
-        // Attempt to search for an existing contact using the custom 'character_id' property.
         const searchResponse = await hubspotClient.crm.contacts.searchApi.doSearch({
             filterGroups: [{
                 filters: [{
@@ -84,29 +83,27 @@ async function findOrCreateContact(hubspotClient, characterData) {
                 }]
             }],
             properties: ['character_id', 'email', 'firstname', 'lastname'],
-            limit: 1 // We only need to find one if it exists
+            limit: 1
         });
 
         if (searchResponse.results && searchResponse.results.length > 0) {
             const existingContact = searchResponse.results[0];
             console.log(`DEBUG: Contact '${characterData.name}' (character_id: ${characterId}) already exists in HubSpot with ID: ${existingContact.id}. Attempting update...`);
-            // Update the existing contact's properties
             const updateResponse = await hubspotClient.crm.contacts.basicApi.update(
                 existingContact.id,
                 { properties: contactProperties }
             );
-            return updateResponse.id; // Return the HubSpot Contact ID
+            return { id: updateResponse.id, created: false };
         } else {
-            // Contact does not exist, proceed with creation.
             console.log(`DEBUG: Creating new contact for '${characterData.name}' (character_id: ${characterId})...`);
             const createResponse = await hubspotClient.crm.contacts.basicApi.create(
                 { properties: contactProperties }
             );
-            return createResponse.id; // Return the new HubSpot Contact ID
+            return { id: createResponse.id, created: true };
         }
     } catch (error) {
         console.error(`ERROR: Failed to find/create/update contact for '${characterData.name}' (character_id: ${characterId}). Error details:`, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
-        return null; // Return null on error
+        return { id: null, created: false };
     }
 }
 
@@ -258,9 +255,15 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
     let companyHubspotId = null;
 
     // 1. Create or Update Contact in HubSpot
-    contactHubspotId = await findOrCreateContact(hubspotClient, character);
+    const contactResult = await findOrCreateContact(hubspotClient, character);
+    contactHubspotId = contactResult?.id || null;
     if (contactHubspotId) {
         processedContactHubspotIds.add(contactHubspotId);
+        if (contactResult.created) {
+            contactsCreated++;
+        } else {
+            contactsUpdated++;
+        }
     }
 
     // 2. Create or Update Company in HubSpot (if location data is available)
@@ -296,6 +299,8 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
   console.log('\nINFO: Rick and Morty to HubSpot migration process completed!');
   console.log(`SUMMARY: Total Contacts processed (created/updated): ${processedContactHubspotIds.size}`);
   console.log(`SUMMARY: Total Unique Companies processed (created/updated): ${processedCompanyHubspotIds.size}`);
+  console.log(`SUMMARY: Total Contacts processed: Created: ${contactsCreated}, Updated: ${contactsUpdated}`);
+
 }
 
 module.exports = {
