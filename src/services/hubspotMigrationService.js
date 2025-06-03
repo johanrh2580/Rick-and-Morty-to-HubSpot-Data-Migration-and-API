@@ -248,6 +248,9 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
   const processedCompanyHubspotIds = new Set();
   const companyLocationMap = new Map(); // Maps Rick and Morty location URL to HubSpot Company ID
 
+  let contactsCreated = 0;
+  let contactsUpdated = 0;
+
   for (const character of charactersToMigrate) {
     console.log(`\nINFO: Processing character: ${character.name} (ID: ${character.id})...`);
 
