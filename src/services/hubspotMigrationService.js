@@ -1,7 +1,16 @@
-
 const hubspot = require('@hubspot/api-client');
 const { isPrime } = require('../utils/math');
 const { getCharacterById, getLocationByUrl, getCharactersInfo } = require('../clients/rickAndMortyClient');
+
+/**
+ * Validates if an email address has a valid format.
+ * @param {string} email - The email address to validate.
+ * @returns {boolean} - True if the email is valid, false otherwise.
+ */
+const isValidEmail = (email) => {
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(email);
+};
 
 /**
  * Maps properties from a Rick and Morty character object to HubSpot Contact properties.
@@ -9,11 +18,17 @@ const { getCharacterById, getLocationByUrl, getCharactersInfo } = require('../cl
  * @returns {object} - An object formatted for HubSpot Contact creation/update.
  */
 const characterToContactMapping = (character) => {
+  // Generate a valid email format
+  const cleanName = character.name
+    .toLowerCase()
+    .replace(/\s+/g, '')      // Remove spaces
+    .replace(/[^a-z0-9]/g, ''); // Remove special characters
+  
   const properties = {
     firstname: character.name.split(' ')[0], // Extract first name
     lastname: character.name.split(' ').slice(1).join(' ') || '', // Extract rest as last name
-    // Generate a more unique email to avoid collisions and fulfill HubSpot's common email requirement.
-    email: `${character.name.toLowerCase().replace(/\\s/g, '')}.${character.id}@rickandmorty.com`,
+    // Generate unique valid email
+    email: `${cleanName}${character.id}@rickandmorty.com`,
     phone: '', // Phone number not available in the API
     lifecyclestage: 'lead', // Default lifecycle stage for new contacts
     character_id: character.id.toString(), // Ensure character_id is a string as per HubSpot property type
@@ -21,6 +36,12 @@ const characterToContactMapping = (character) => {
     character_species: character.species,
     character_gender: character.gender,
   };
+  
+  // Fallback email if generated is invalid
+  if (!isValidEmail(properties.email)) {
+    properties.email = `character${character.id}@rickandmorty.com`;
+  }
+  
   return { properties };
 };
 
@@ -149,13 +170,16 @@ async function createAssociation(hubspotClient, contactHubspotId, companyHubspot
     }
 
     try {
-        // Define the association types and objects.
+        // Define the association types and objects for API v4
         await hubspotClient.crm.associations.v4.basicApi.create(
             'contact',
             contactHubspotId,
             'company',
             companyHubspotId,
-            'contact_to_company' // Standard association type
+            [{
+                associationCategory: 'HUBSPOT_DEFINED',
+                associationTypeId: 1 // Standard association type for Contact to Company
+            }]
         );
         console.log(`INFO: Association created: Contact '${characterName}' (HubSpot ID: ${contactHubspotId}) associated with Company (HubSpot ID: ${companyHubspotId}).`);
     } catch (error) {
@@ -208,7 +232,7 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
               console.log(`DEBUG: Collected character: ${character.name} (ID: ${character.id})`);
           }
       }
-      console.log(`INFO: ${charactersToMigrate.length} characters identified for migration.`);
+      console.log(`INFO: ${charactersToMigrate.length} characters identified for migration.');
 
   } catch (error) {
       console.error('CRITICAL ERROR: Failed to fetch characters from Rick and Morty API during identification:', error.message);
