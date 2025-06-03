@@ -1,80 +1,89 @@
 const axios = require('axios');
 const https = require('https');
 
+// Base API endpoint for Rick and Morty API
 const BASE_URL = 'https://rickandmortyapi.com/api';
 
-// Create an HTTPS agent for axios to handle SSL/TLS connections.
-// rejectUnauthorized: false is used ONLY for debugging purposes in development environments.
-// In a production environment, this should be true, or proper certificate handling should be implemented.
+/**
+ * HTTPS agent configuration for axios requests
+ * Note: Disabling certificate validation (rejectUnauthorized: false) 
+ * should only be used in development environments.
+ * Production environments should implement proper certificate validation.
+ */
 const agent = new https.Agent({
   rejectUnauthorized: false,
 });
 
 /**
- * Fetches a character by their ID from the Rick and Morty API.
- * @param {number} characterId - The ID of the character to fetch.
- * @returns {Promise<object>} - A promise that resolves to the character data.
- * @throws {Error} - Throws an error if the API request fails.
+ * Retrieves character data by ID from Rick and Morty API
+ * @param {number} characterId - Unique identifier for the character
+ * @returns {Promise<Object>} Character data object
+ * @throws Will throw error if request fails or times out
  */
 async function getCharacterById(characterId) {
   try {
     const response = await axios.get(`${BASE_URL}/character/${characterId}`, {
       httpsAgent: agent,
-      timeout: 10000, // Add a 10-second timeout
+      timeout: 10000 // 10 second timeout
     });
     return response.data;
   } catch (error) {
-    console.error(`ERROR: Failed to fetch character ${characterId}:`, error.message);
-    throw new Error(`Could not retrieve character with ID ${characterId}.`);
+    console.error(`Character fetch failed for ID ${characterId}:`, {
+      error: error.message,
+      status: error.response?.status
+    });
+    throw new Error(`API request failed for character ${characterId}`);
   }
 }
 
 /**
- * Fetches location data from a given URL.
- * @param {string} locationUrl - The URL of the location to fetch.
- * @returns {Promise<object>} - A promise that resolves to the location data.
- * @throws {Error} - Throws an error if the API request fails.
+ * Fetches location data from specified URL
+ * @param {string} locationUrl - Complete API endpoint for location
+ * @returns {Promise<Object>} Location data object
+ * @throws Will throw error if request fails or times out
  */
 async function getLocationByUrl(locationUrl) {
   try {
     const response = await axios.get(locationUrl, {
       httpsAgent: agent,
-      timeout: 10000, // Add a 10-second timeout
+      timeout: 10000 // 10 second timeout
     });
     return response.data;
   } catch (error) {
-    console.error(`ERROR: Failed to fetch location from URL ${locationUrl}:`, error.message);
-    throw new Error(`Could not retrieve location from URL ${locationUrl}.`);
+    console.error(`Location fetch failed for URL ${locationUrl}:`, {
+      error: error.message,
+      status: error.response?.status
+    });
+    throw new Error(`API request failed for location ${locationUrl}`);
   }
 }
 
 /**
- * Fetches characters information (including paginated results) from the Rick and Morty API.
- * This function can fetch a specific page or the initial info object.
- * @param {number} [page=null] - The page number to fetch. If null, fetches the first page to get metadata.
- * @returns {Promise<object>} - A promise that resolves to the response data (info and results).
- * @throws {Error} - Throws an error if the API request fails.
+ * Retrieves paginated character data from Rick and Morty API
+ * @param {number|null} [page=null] - Specific page number or null for initial data
+ * @returns {Promise<Object>} Object containing character data and pagination info
+ * @throws Will throw error if request fails or times out
  */
 async function getCharactersInfo(page = null) {
-  let url = `${BASE_URL}/character`;
-  if (page !== null) {
-    url += `?page=${page}`;
-  }
-
+  const endpoint = page ? `${BASE_URL}/character?page=${page}` : `${BASE_URL}/character`;
+  
   try {
-    const response = await axios.get(url, {
+    const response = await axios.get(endpoint, {
       httpsAgent: agent,
-      timeout: 10000, // Add a 10-second timeout
+      timeout: 10000 // 10 second timeout
     });
-    return response.data; // Return the entire response data (includes info and results)
+    return response.data;
   } catch (error) {
-    console.error(`ERROR: Failed to fetch characters info (page ${page !== null ? page : 'initial'}):`, error.message);
-    throw new Error(`Could not retrieve characters info for page ${page !== null ? page : 'initial'}.`);
+    console.error(`Character list fetch failed for page ${page || 'initial'}:`, {
+      error: error.message,
+      status: error.response?.status
+    });
+    throw new Error(`API request failed for characters page ${page || 'initial'}`);
   }
 }
 
 module.exports = {
   getCharacterById,
   getLocationByUrl,
-  getCharactersInfo,
+  getCharactersInfo
 };
