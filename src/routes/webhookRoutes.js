@@ -5,15 +5,13 @@ const winston = require('winston');
 const retry = require('async-retry');
 const { body, validationResult } = require('express-validator');
 
-// Carga las variables de entorno. Es una buena práctica ponerlo aquí también
-// por si este módulo se ejecuta de forma independiente o en un contexto diferente.
 require('dotenv').config();
 
 const logger = winston.createLogger({
   level: 'info',
   format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
   transports: [
-    new winston.transports.File({ filename: 'webhook.log' }), // Log específico para webhooks
+    new winston.transports.File({ filename: 'webhook.log' }),
     new winston.transports.Console(),
   ],
 });
@@ -33,8 +31,6 @@ async function upsertContact(data) {
   const characterId = data.character_id;
   const email = data.email;
 
-  // Validación básica, aunque express-validator lo hace para las rutas del webhook,
-  // esta función puede ser llamada desde otros lugares (como el endpoint /sync)
   if (!characterId || !email) {
     logger.error('Missing required fields in contact data for upsert', { characterId, email });
     throw new Error('Missing required fields: character_id and email are required for upsertContact');
@@ -43,7 +39,7 @@ async function upsertContact(data) {
   const properties = {
     firstname: data.firstname || '',
     lastname: data.lastname || '',
-    email: email, // Usamos el email validado o provisto
+    email: email,
     character_id: characterId,
     character_status: data.character_status || '',
     character_species: data.character_species || '',
@@ -64,12 +60,12 @@ async function upsertContact(data) {
           const existing = searchResponse.results[0];
           logger.info(`Updating existing contact: ${existing.id}`, { characterId });
           await hubspotMirrorClient.crm.contacts.basicApi.update(existing.id, { properties });
-          contactId = existing.id; // Guarda el ID del contacto existente
+          contactId = existing.id;
           return 'updated';
         } else {
           logger.info('Creating new contact', { characterId, email });
           const createResponse = await hubspotMirrorClient.crm.contacts.basicApi.create({ properties });
-          contactId = createResponse.id; // Guarda el ID del contacto recién creado
+          contactId = createResponse.id;
           logger.info('Contact created', { contactId });
           return 'created';
         }
@@ -83,8 +79,7 @@ async function upsertContact(data) {
       }
     );
 
-    // Crear asociación si company_name es proporcionado
-    if (data.company_name && contactId) { // Asegúrate de que contactId exista
+    if (data.company_name && contactId) {
       try {
         logger.info('Attempting to associate contact with company', { contactId, companyName: data.company_name });
         const companySearch = await hubspotMirrorClient.crm.companies.searchApi.doSearch({
@@ -94,13 +89,12 @@ async function upsertContact(data) {
 
         if (companySearch.results.length > 0) {
           const companyId = companySearch.results[0].id;
-          // Crear la asociación entre contacto y empresa
           await hubspotMirrorClient.crm.associations.v4.basicApi.create(
             'contact',
             contactId,
             'company',
             companyId,
-            [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 1 }] // Tipo de asociación Contact-Company
+            [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 1 }]
           );
           logger.info('Association created', { contactId, companyId });
         } else {
@@ -111,10 +105,10 @@ async function upsertContact(data) {
       }
     }
 
-    return action; // Retorna si fue 'created' o 'updated'
+    return action;
   } catch (error) {
     logger.error('Failed to upsert contact and/or create association', { characterId, error: error.message, stack: error.stack });
-    throw error; // Propagar el error para que el llamador lo maneje
+    throw error;
   }
 }
 
@@ -162,7 +156,7 @@ async function upsertCompany(data) {
         onRetry: (err, attempt) => logger.warn('Retrying company API call', { attempt, error: err.message }),
       }
     );
-    return action; // Retorna si fue 'created' o 'updated'
+    return action;
   } catch (error) {
     logger.error('Failed to upsert company', { name, error: error.message, stack: error.stack });
     throw error;
@@ -216,7 +210,6 @@ router.post(
   }
 );
 
-// Exporta el router y las funciones upsert para que puedan ser usadas por app.js
 module.exports = {
   router,
   upsertContact,
