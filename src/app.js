@@ -92,7 +92,7 @@ app.post('/sync', async (req, res) => {
 });
 
 // Re-export upsert functions for use in /sync endpoint
-const { upsertContact, upsertCompany } = require('../routes/webhookRoutesRoutes');
+const { upsertContact, upsertCompany } = require('/routes/webhookRoutes');
 
 app.listen(port, () => {
   logger.info(`Server running on port ${port}`);
