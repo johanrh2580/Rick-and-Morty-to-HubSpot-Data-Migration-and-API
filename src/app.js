@@ -2,12 +2,17 @@ const hubspot = require('@hubspot/api-client');
 require('dotenv').config();
 const axios = require('axios');
 
+// Inicializa los clientes de HubSpot para la cuenta Origen y Espejo
 const hubspotClientSource = new hubspot.Client({ accessToken: process.env.HUBSPOT_SOURCE_TOKEN });
 const hubspotClientMirror = new hubspot.Client({ accessToken: process.env.HUBSPOT_MIRROR_TOKEN });
 
-// Mapeo para almacenar correspondencia entre IDs de Source y Mirror
+// Mapeo para almacenar correspondencia entre IDs de Compañías de Source y Mirror
 const companyIdMap = new Map();
 
+/**
+ * Sincroniza las compañías de la cuenta Source a la cuenta Mirror.
+ * Si una compañía ya existe en Mirror (por nombre), se actualiza. De lo contrario, se crea.
+ */
 async function syncCompanies() {
   console.log('Starting full sync of companies from Source HubSpot');
   let after = undefined;
@@ -31,167 +36,230 @@ async function syncCompanies() {
 
   for (const company of allSourceCompanies) {
     const companyName = company.properties.name;
-    // Buscar si la empresa ya existe en Mirror por nombre
-    const existingCompany = allMirrorCompanies.find(c => c.properties.name.toLowerCase() === companyName.toLowerCase());
+    const sourceCompanyId = company.id;
 
-    if (existingCompany) {
-      console.log(`Company ${companyName} already exists in Mirror, updating`);
-      try {
-        await hubspotClientMirror.crm.companies.basicApi.update(existingCompany.id, {
-          properties: { name: companyName, hs_lastmodifieddate: company.properties.hs_lastmodifieddate }
+    if (!companyName) {
+      console.warn(`Skipping company with ID: ${sourceCompanyId} due to missing name.`);
+      continue;
+    }
+
+    try {
+      // Buscar compañía existente en Mirror por nombre
+      let mirrorCompany = allMirrorCompanies.find(mirrorComp => mirrorComp.properties.name === companyName);
+
+      const companyProperties = {
+        name: companyName,
+        phone: company.properties.phone || '',
+        industry: company.properties.industry || '',
+        // Puedes añadir más propiedades de la empresa aquí si lo necesitas
+      };
+
+      let upsertedCompany;
+      if (mirrorCompany) {
+        console.log(`Company ${companyName} already exists in Mirror, updating`);
+        upsertedCompany = await hubspotClientMirror.crm.companies.basicApi.update(mirrorCompany.id, {
+          properties: companyProperties
         });
-        // Mapear el ID de Source al ID de Mirror
-        companyIdMap.set(company.id, existingCompany.id);
-      } catch (error) {
-        console.error(`Error updating company ${companyName}: ${error.message}`);
+      } else {
+        console.log(`Creating new company: ${companyName}`);
+        upsertedCompany = await hubspotClientMirror.crm.companies.basicApi.create({
+          properties: companyProperties
+        });
       }
-    } else {
-      console.log(`Creating new company ${companyName}`);
-      try {
-        const newCompany = await hubspotClientMirror.crm.companies.basicApi.create({
-          properties: { name: companyName, hs_lastmodifieddate: company.properties.hs_lastmodifieddate }
-        });
-        // Mapear el ID de Source al nuevo ID de Mirror
-        companyIdMap.set(company.id, newCompany.body.id);
-      } catch (error) {
-        console.error(`Error creating company ${companyName}: ${error.message}`);
+      companyIdMap.set(sourceCompanyId, upsertedCompany.id); // Mapear el ID de Source al ID de Mirror
+      console.log(`Company synced: ${companyName}`);
+
+    } catch (error) {
+      console.error(`Failed to sync company ${companyName} (ID: ${sourceCompanyId}): ${error.message}`);
+      if (error.response && error.response.data) {
+        console.error('HubSpot API Error Details:', JSON.stringify(error.response.data, null, 2));
       }
     }
-    console.log(`Company synced: ${companyName}`);
   }
-  console.log(`Companies synced: ${allSourceCompanies.length}`);
-  return allSourceCompanies.length;
+  console.log('Finished full sync of companies.');
 }
 
+/**
+ * Sincroniza los contactos de la cuenta Source a la cuenta Mirror.
+ * Utiliza character_id para buscar y actualizar. Si no se encuentra, crea un nuevo contacto.
+ */
 async function syncContacts() {
-  console.log('Starting full sync of contacts from Source HubSpot');
+  console.log('Starting full sync to Mirror account');
   let after = undefined;
   let allSourceContacts = [];
 
   // Obtener todos los contactos de la cuenta Source
   do {
-    const apiResponse = await hubspotClientSource.crm.contacts.basicApi.getPage(100, after, ['email', 'company_name', 'character_id']);
+    const apiResponse = await hubspotClientSource.crm.contacts.basicApi.getPage(
+      100,
+      after,
+      ['character_id', 'email', 'firstname', 'lastname', 'character_status', 'character_species', 'character_gender', 'associatedcompanyid'] // Asegúrate de pedir 'associatedcompanyid'
+    );
     allSourceContacts = allSourceContacts.concat(apiResponse.results);
     after = apiResponse.paging ? apiResponse.paging.next.after : undefined;
   } while (after);
 
-  // Obtener todos los contactos de la cuenta Mirror para comparar
-  let allMirrorContacts = [];
-  after = undefined;
-  do {
-    const apiResponse = await hubspotClientMirror.crm.contacts.basicApi.getPage(100, after, ['email', 'character_id', 'company_name']);
-    allMirrorContacts = allMirrorContacts.concat(apiResponse.results);
-    after = apiResponse.paging ? apiResponse.paging.next.after : undefined;
-  } while (after);
-
   for (const contact of allSourceContacts) {
-    if (!contact.properties.character_id) {
-      console.warn(`Skipping contact ${contact.properties.email} due to missing character_id`);
+    const characterId = contact.properties.character_id;
+    const email = contact.properties.email;
+
+    // Saltar contactos sin character_id
+    if (!characterId) {
+      console.warn(`Skipping contact ${contact.properties.firstname || contact.properties.email} (ID: ${contact.id}) due to missing character_id`);
       continue;
     }
 
-    const contactEmail = contact.properties.email;
-    // Buscar si el contacto ya existe en Mirror por email
-    const existingContact = allMirrorContacts.find(c => c.properties.email && c.properties.email.toLowerCase() === contactEmail.toLowerCase());
+    console.log(`Processing contact webhook payload`, { payload: contact.properties }); // Log para ver el payload
 
-    let contactId;
-    if (existingContact) {
-      console.log(`Contact ${contactEmail} already exists in Mirror, updating`);
-      try {
-        await hubspotClientMirror.crm.contacts.basicApi.update(existingContact.id, {
-          properties: {
-            email: contact.properties.email,
-            character_id: contact.properties.character_id,
-            company_name: contact.properties.company_name || null
-          }
+    try {
+      let mirrorContact = null;
+      // Intentar encontrar un contacto existente por character_id
+      if (characterId) {
+        console.log(`Searching for existing contact by character_id: ${characterId}`);
+        const searchResponse = await hubspotClientMirror.crm.contacts.searchApi.doSearch({
+          filterGroups: [{
+            filters: [{
+              propertyName: 'character_id',
+              operator: 'EQ',
+              value: characterId
+            }]
+          }],
+          // <<<<<<<<<<<<<<<< ESTA ES LA LÍNEA CORREGIDA >>>>>>>>>>>>>>>>>>
+          properties: ['email', 'firstname', 'lastname', 'character_id', 'character_status', 'character_species', 'character_gender'], // Corrección: quitada la comilla extra en 'character_id'
+          // <<<<<<<<<<<<<<<<<<<<<<<<<<< FIN >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+          limit: 1 // Solo necesitamos un resultado
         });
-        contactId = existingContact.id;
-      } catch (error) {
-        console.error(`Error updating contact ${contactEmail}: ${error.message}`);
-        continue;
+        if (searchResponse.results.length > 0) {
+          mirrorContact = searchResponse.results[0];
+          console.log(`Contact with character_id ${characterId} found in Mirror: ${mirrorContact.id}`);
+        }
       }
-    } else {
-      console.log(`Creating new contact ${contactEmail}`);
-      try {
-        const newContact = await hubspotClientMirror.crm.contacts.basicApi.create({
-          properties: {
-            email: contact.properties.email,
-            character_id: contact.properties.character_id,
-            company_name: contact.properties.company_name || null
-          }
+
+      // Si no se encuentra por character_id y el email está disponible, intentar por email
+      if (!mirrorContact && email) {
+        console.log(`Searching for existing contact by email: ${email}`);
+        const searchResponse = await hubspotClientMirror.crm.contacts.searchApi.doSearch({
+          filterGroups: [{
+            filters: [{
+              propertyName: 'email',
+              operator: 'EQ',
+              value: email
+            }]
+          }],
+          properties: ['email', 'firstname', 'lastname', 'character_id', 'character_status', 'character_species', 'character_gender'],
+          limit: 1
         });
-        contactId = newContact.body.id;
-        // Agregar el nuevo contacto a la lista de contactos de Mirror para evitar buscarlo nuevamente
-        allMirrorContacts.push({ id: contactId, properties: contact.properties });
-      } catch (error) {
-        console.error(`Error creating contact ${contactEmail}: ${error.message}`);
-        continue;
+        if (searchResponse.results.length > 0) {
+          mirrorContact = searchResponse.results[0];
+          console.log(`Contact with email ${email} found in Mirror: ${mirrorContact.id}`);
+        }
+      }
+
+      const contactProperties = {
+        email: contact.properties.email,
+        firstname: contact.properties.firstname,
+        lastname: contact.properties.lastname || '',
+        character_id: characterId,
+        character_status: contact.properties.character_status,
+        character_species: contact.properties.character_species,
+        character_gender: contact.properties.character_gender
+      };
+
+      let upsertedContact;
+      if (mirrorContact) {
+        // Actualizar contacto existente
+        console.log(`Updating contact ${mirrorContact.id} with character_id: ${characterId}`);
+        upsertedContact = await hubspotClientMirror.crm.contacts.basicApi.update(mirrorContact.id, {
+          properties: contactProperties
+        });
+        console.log(`Contact updated: ${upsertedContact.id}`);
+      } else {
+        // Crear nuevo contacto
+        console.log(`Creating new contact with character_id: ${characterId}`);
+        upsertedContact = await hubspotClientMirror.crm.contacts.basicApi.create({
+          properties: contactProperties
+        });
+        console.log(`Contact created: ${upsertedContact.id}`);
+      }
+
+      // Asociar contacto con la compañía si existe la ID de compañía asociada en Source
+      const sourceCompanyId = contact.properties.associatedcompanyid; // Esta es la ID de la compañía en la cuenta Source
+
+      if (upsertedContact && sourceCompanyId) {
+        await associateContactWithCompany(upsertedContact.id, sourceCompanyId);
+      }
+
+    } catch (error) {
+      console.error(`Failed to upsert contact and/or create association`, { character_id: characterId, error: error.message, stack: error.stack });
+      if (error.response && error.response.data) {
+        console.error('HubSpot API Error Details:', JSON.stringify(error.response.data, null, 2));
       }
     }
-
-    // Intentar asociar el contacto con la empresa
-    await associateCompany(contactId, contact.properties.company_name);
-    console.log(`Contact synced: character_id ${contact.properties.character_id}, email ${contact.properties.email}`);
   }
-  console.log(`Contacts synced: ${allSourceContacts.length}`);
+  console.log('Finished full sync of contacts.');
 }
 
-async function associateCompany(contactId, companyName) {
-  if (!companyName) {
-    console.log(`No company name provided for contact ${contactId}, skipping association`);
+/**
+ * Asocia un contacto en la cuenta Mirror con una compañía en la cuenta Mirror.
+ * @param {string} contactId - El ID del contacto en la cuenta Mirror.
+ * @param {string} sourceCompanyId - El ID de la compañía en la cuenta Source.
+ */
+async function associateContactWithCompany(contactId, sourceCompanyId) {
+  const mirrorCompanyId = companyIdMap.get(sourceCompanyId); // Obtener la ID de la compañía en Mirror desde el mapa
+
+  if (!mirrorCompanyId) {
+    console.warn(`No Mirror company ID found for Source company ID ${sourceCompanyId}, skipping association for contact ${contactId}`);
     return;
   }
 
   try {
-    let after = undefined;
-    let allCompanies = [];
-    do {
-      const apiResponse = await hubspotClientMirror.crm.companies.basicApi.getPage(100, after, ['name']);
-      allCompanies = allCompanies.concat(apiResponse.results);
-      after = apiResponse.paging ? apiResponse.paging.next.after : undefined;
-    } while (after);
-
-    const company = allCompanies.find(c => c.properties.name.toLowerCase() === companyName.toLowerCase());
-    if (company) {
-      await hubspotClientMirror.crm.associations.v4.batchApi.create('contact', 'company', [{
-        from: { id: contactId },
-        to: { id: company.id },
-        types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 1 }]
-      }]);
-      console.log(`Contact ${contactId} associated with company ${companyName}`);
-    } else {
-      console.warn(`Company ${companyName} not found for association with contact ${contactId}, skipping`);
-    }
+    // Definir el tipo de asociación predeterminado para contactos y empresas
+    // El associationTypeId 1 es una asociación estándar de HubSpot entre contacto y empresa
+    await hubspotClientMirror.crm.associations.v4.batchApi.create('contact', 'company', [{
+      from: { id: contactId },
+      to: { id: mirrorCompanyId },
+      types: [{ associationCategory: 'HUBSPOT_DEFINED', associationTypeId: 1 }]
+    }]);
+    console.log(`Contact ${contactId} associated with company ID ${mirrorCompanyId}`);
   } catch (error) {
-    console.warn(`Failed to associate company ${companyName} with contact ${contactId}: ${error.message}`);
+    console.warn(`Failed to associate company ID ${mirrorCompanyId} with contact ${contactId}: ${error.message}`);
+    if (error.response && error.response.data) {
+      console.warn('HubSpot Association API Error Details:', JSON.stringify(error.response.data, null, 2));
+    }
   }
 }
 
+/**
+ * Ejecuta una sincronización completa de compañías y contactos.
+ */
 async function fullSync() {
   try {
-    await syncCompanies();
-    await syncContacts();
+    await syncCompanies(); // Sincroniza compañías primero para tener los IDs de Mirror
+    await syncContacts();  // Luego sincroniza contactos, asociándolos con las compañías ya mapeadas
   } catch (error) {
     console.error('Error during full sync:', error.message);
+    if (error.response && error.response.data) {
+      console.error('HubSpot API Error Details during full sync:', JSON.stringify(error.response.data, null, 2));
+    }
   }
 }
 
+// Configuración del servidor Express para la migración
 const express = require('express');
 const app = express();
 app.use(express.json());
 
+// El servidor escucha en el puerto 3000 (o el que se configure en PORT)
+// Y automáticamente inicia la sincronización completa al arrancar
 app.listen(process.env.PORT || 3000, () => {
   console.log(`Server running on port ${process.env.PORT || 3000}`);
   fullSync();
 });
 
+// Endpoint para webhooks (si necesitas manejar actualizaciones incrementales en el futuro)
 app.post('/webhook', async (req, res) => {
-  const payload = req.body;
-  console.log('Processing webhook payload', { payload });
-  if (payload.objectType === 'contact') {
-    await syncContacts();
-  } else if (payload.objectType === 'company') {
-    await syncCompanies();
-  }
-  res.sendStatus(200);
+  console.log('Webhook received:', JSON.stringify(req.body, null, 2));
+  // Aquí iría la lógica para procesar webhooks (por ejemplo, actualizar un solo contacto/empresa)
+  // Por ahora, solo es un marcador de posición. La sincronización principal se hace en fullSync().
+  res.status(200).send('Webhook received');
 });
