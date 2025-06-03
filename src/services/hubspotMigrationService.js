@@ -24,14 +24,14 @@ const characterToContactMapping = (character) => {
   .toLowerCase()
   .replace(/[^a-z0-9]/g, ''); 
 
-const email = `${cleanName}${character.id}@rickandmorty.com`;
+const email = ${cleanName}${character.id}@rickandmorty.com;
 
   
   const properties = {
     firstname: character.name.split(' ')[0], // Extract first name
     lastname: character.name.split(' ').slice(1).join(' ') || '', // Extract rest as last name
     // Generate unique valid email
-    email: `${cleanName}${character.id}@rickandmorty.com`,
+    email: ${cleanName}${character.id}@rickandmorty.com,
     phone: '', // Phone number not available in the API
     lifecyclestage: 'lead', // Default lifecycle stage for new contacts
     character_id: character.id.toString(), // Ensure character_id is a string as per HubSpot property type
@@ -42,7 +42,7 @@ const email = `${cleanName}${character.id}@rickandmorty.com`;
   
   // Fallback email if generated is invalid
   if (!isValidEmail(email)) {
-    email = `character${character.id}@rickandmorty.com`;
+    email = character${character.id}@rickandmorty.com;
   }
 
   
@@ -74,6 +74,7 @@ async function findOrCreateContact(hubspotClient, characterData) {
     const contactProperties = characterToContactMapping(characterData).properties;
 
     try {
+        // Attempt to search for an existing contact using the custom 'character_id' property.
         const searchResponse = await hubspotClient.crm.contacts.searchApi.doSearch({
             filterGroups: [{
                 filters: [{
@@ -83,27 +84,29 @@ async function findOrCreateContact(hubspotClient, characterData) {
                 }]
             }],
             properties: ['character_id', 'email', 'firstname', 'lastname'],
-            limit: 1
+            limit: 1 // We only need to find one if it exists
         });
 
         if (searchResponse.results && searchResponse.results.length > 0) {
             const existingContact = searchResponse.results[0];
-            console.log(`DEBUG: Contact '${characterData.name}' (character_id: ${characterId}) already exists in HubSpot with ID: ${existingContact.id}. Attempting update...`);
+            console.log(DEBUG: Contact '${characterData.name}' (character_id: ${characterId}) already exists in HubSpot with ID: ${existingContact.id}. Attempting update...);
+            // Update the existing contact's properties
             const updateResponse = await hubspotClient.crm.contacts.basicApi.update(
                 existingContact.id,
                 { properties: contactProperties }
             );
-            return { id: updateResponse.id, created: false };
+            return updateResponse.id; // Return the HubSpot Contact ID
         } else {
-            console.log(`DEBUG: Creating new contact for '${characterData.name}' (character_id: ${characterId})...`);
+            // Contact does not exist, proceed with creation.
+            console.log(DEBUG: Creating new contact for '${characterData.name}' (character_id: ${characterId})...);
             const createResponse = await hubspotClient.crm.contacts.basicApi.create(
                 { properties: contactProperties }
             );
-            return { id: createResponse.id, created: true };
+            return createResponse.id; // Return the new HubSpot Contact ID
         }
     } catch (error) {
-        console.error(`ERROR: Failed to find/create/update contact for '${characterData.name}' (character_id: ${characterId}). Error details:`, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
-        return { id: null, created: false };
+        console.error(ERROR: Failed to find/create/update contact for '${characterData.name}' (character_id: ${characterId}). Error details:, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
+        return null; // Return null on error
     }
 }
 
@@ -133,7 +136,7 @@ async function findOrCreateCompany(hubspotClient, locationData) {
 
         if (searchResponse.results && searchResponse.results.length > 0) {
             const existingCompany = searchResponse.results[0];
-            console.log(`DEBUG: Company '${companyName}' already exists in HubSpot with ID: ${existingCompany.id}. Attempting update...`);
+            console.log(DEBUG: Company '${companyName}' already exists in HubSpot with ID: ${existingCompany.id}. Attempting update...);
             // Update the existing company's properties
             const updateResponse = await hubspotClient.crm.companies.basicApi.update(
                 existingCompany.id,
@@ -142,14 +145,14 @@ async function findOrCreateCompany(hubspotClient, locationData) {
             return updateResponse.id; // Return the HubSpot Company ID
         } else {
             // Company does not exist, proceed with creation.
-            console.log(`DEBUG: Creating new company for '${companyName}'...`);
+            console.log(DEBUG: Creating new company for '${companyName}'...);
             const createResponse = await hubspotClient.crm.companies.basicApi.create(
                 { properties: companyProperties }
             );
             return createResponse.id; // Return the new HubSpot Company ID
         }
     } catch (error) {
-        console.error(`ERROR: Failed to find/create/update company for '${companyName}'. Error details:`, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
+        console.error(ERROR: Failed to find/create/update company for '${companyName}'. Error details:, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
         return null; // Return null on error
     }
 }
@@ -166,7 +169,7 @@ async function findOrCreateCompany(hubspotClient, locationData) {
 async function createAssociation(hubspotClient, contactHubspotId, companyHubspotId, characterName, characterId) {
     // Log a warning and skip association if either ID is missing.
     if (!contactHubspotId || !companyHubspotId) {
-        console.warn(`WARNING: Could not associate character '${characterName}' (ID: ${characterId}). Missing HubSpot Contact ID (${contactHubspotId}) or HubSpot Company ID (${companyHubspotId}).`);
+        console.warn(WARNING: Could not associate character '${characterName}' (ID: ${characterId}). Missing HubSpot Contact ID (${contactHubspotId}) or HubSpot Company ID (${companyHubspotId}).);
         return;
     }
 
@@ -185,9 +188,9 @@ async function createAssociation(hubspotClient, contactHubspotId, companyHubspot
           ]
         );
 
-        console.log(`INFO: Association created: Contact '${characterName}' (HubSpot ID: ${contactHubspotId}) associated with Company (HubSpot ID: ${companyHubspotId}).`);
+        console.log(INFO: Association created: Contact '${characterName}' (HubSpot ID: ${contactHubspotId}) associated with Company (HubSpot ID: ${companyHubspotId}).);
     } catch (error) {
-        console.error(`ERROR: Failed to create association between contact ${contactHubspotId} and company ${companyHubspotId} for '${characterName}' (ID: ${characterId}). Error details:`, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
+        console.error(ERROR: Failed to create association between contact ${contactHubspotId} and company ${companyHubspotId} for '${characterName}' (ID: ${characterId}). Error details:, error.response ? JSON.stringify(error.response.body, null, 2) : error.message);
     }
 }
 
@@ -209,7 +212,7 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
       // Fetch initial info to get total number of pages
       const initialCharactersResponse = await getCharactersInfo(); // Call without page to get metadata
       const totalPages = initialCharactersResponse.info.pages;
-      console.log(`DEBUG: Total pages of characters: ${totalPages}`);
+      console.log(DEBUG: Total pages of characters: ${totalPages});
 
       // Collect all characters from all available pages
       let allCharacters = [];
@@ -219,7 +222,7 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
               allCharacters = allCharacters.concat(pageResponse.results);
           }
       }
-      console.log(`DEBUG: Fetched ${allCharacters.length} characters in total from all pages.`);
+      console.log(DEBUG: Fetched ${allCharacters.length} characters in total from all pages.);
 
       // Filter characters based on prime IDs and ID 1 (Rick Sanchez)
       const primeIds = new Set();
@@ -233,10 +236,10 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
       for (const character of allCharacters) {
           if (primeIds.has(character.id) && character.id <= MAX_CHARACTER_ID) {
               charactersToMigrate.push(character);
-              console.log(`DEBUG: Collected character: ${character.name} (ID: ${character.id})`);
+              console.log(DEBUG: Collected character: ${character.name} (ID: ${character.id}));
           }
       }
-      console.log(`INFO: ${charactersToMigrate.length} characters identified for migration.`);
+      console.log(INFO: ${charactersToMigrate.length} characters identified for migration.);
 
   } catch (error) {
       console.error('CRITICAL ERROR: Failed to fetch characters from Rick and Morty API during identification:', error.message);
@@ -248,25 +251,16 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
   const processedCompanyHubspotIds = new Set();
   const companyLocationMap = new Map(); // Maps Rick and Morty location URL to HubSpot Company ID
 
-  let contactsCreated = 0;
-  let contactsUpdated = 0;
-
   for (const character of charactersToMigrate) {
-    console.log(`\nINFO: Processing character: ${character.name} (ID: ${character.id})...`);
+    console.log(\nINFO: Processing character: ${character.name} (ID: ${character.id})...);
 
     let contactHubspotId = null;
     let companyHubspotId = null;
 
     // 1. Create or Update Contact in HubSpot
-    const contactResult = await findOrCreateContact(hubspotClient, character);
-    contactHubspotId = contactResult?.id || null;
+    contactHubspotId = await findOrCreateContact(hubspotClient, character);
     if (contactHubspotId) {
         processedContactHubspotIds.add(contactHubspotId);
-        if (contactResult.created) {
-            contactsCreated++;
-        } else {
-            contactsUpdated++;
-        }
     }
 
     // 2. Create or Update Company in HubSpot (if location data is available)
@@ -276,7 +270,7 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
         // Check if the company for this location URL has already been processed
         if (companyLocationMap.has(locationUrl)) {
             companyHubspotId = companyLocationMap.get(locationUrl);
-            console.log(`DEBUG: Company for location '${character.origin.name}' (URL: ${locationUrl}) already processed with HubSpot ID: ${companyHubspotId}. Reusing ID.`);
+            console.log(DEBUG: Company for location '${character.origin.name}' (URL: ${locationUrl}) already processed with HubSpot ID: ${companyHubspotId}. Reusing ID.);
         } else {
             try {
                 const locationData = await getLocationByUrl(locationUrl);
@@ -288,11 +282,11 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
                     }
                 }
             } catch (error) {
-                console.error(`ERROR: Failed to fetch or create company for location '${character.origin.name}' (URL: ${locationUrl}). Details:`, error.message);
+                console.error(ERROR: Failed to fetch or create company for location '${character.origin.name}' (URL: ${locationUrl}). Details:, error.message);
             }
         }
     } else {
-        console.warn(`WARNING: Character '${character.name}' (ID: ${character.id}) has no valid origin URL to associate with a company.`);
+        console.warn(WARNING: Character '${character.name}' (ID: ${character.id}) has no valid origin URL to associate with a company.);
     }
 
     // 3. Create Association (ONLY if both HubSpot IDs are valid)
@@ -300,10 +294,8 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
   }
 
   console.log('\nINFO: Rick and Morty to HubSpot migration process completed!');
-  console.log(`SUMMARY: Total Contacts processed (created/updated): ${processedContactHubspotIds.size}`);
-  console.log(`SUMMARY: Total Unique Companies processed (created/updated): ${processedCompanyHubspotIds.size}`);
-  console.log(`SUMMARY: Total Contacts processed: Created: ${contactsCreated}, Updated: ${contactsUpdated}`);
-
+  console.log(SUMMARY: Total Contacts processed (created/updated): ${processedContactHubspotIds.size});
+  console.log(SUMMARY: Total Unique Companies processed (created/updated): ${processedCompanyHubspotIds.size});
 }
 
 module.exports = {
