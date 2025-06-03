@@ -1,162 +1,134 @@
-const express = require('express');
 const hubspot = require('@hubspot/api-client');
-const winston = require('winston');
-const axios = require('axios'); // Asegúrate de que axios esté instalado: npm install axios
 require('dotenv').config();
+const axios = require('axios');
 
-const { router: webhookRouter, upsertContact, upsertCompany } = require('./routes/webhookRoutes');
+const hubspotClientSource = new hubspot.Client({ accessToken: process.env.HUBSPOT_SOURCE_TOKEN });
+const hubspotClientMirror = new hubspot.Client({ accessToken: process.env.HUBSPOT_MIRROR_TOKEN });
 
-const app = express();
-const port = process.env.PORT || 3000;
+async function syncCompanies() {
+  console.log('Starting full sync of companies from Source HubSpot');
+  let after = undefined;
+  let allCompanies = [];
 
-const logger = winston.createLogger({
-  level: 'info',
-  format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
-  transports: [
-    new winston.transports.File({ filename: 'app.log' }),
-    new winston.transports.Console(),
-  ],
-});
+  do {
+    const apiResponse = await hubspotClientSource.crm.companies.basicApi.getPage(100, after);
+    allCompanies = allCompanies.concat(apiResponse.results);
+    after = apiResponse.paging ? apiResponse.paging.next.after : undefined;
+  } while (after);
 
-app.use(express.json());
-app.use('/webhooks', webhookRouter);
-
-// 👉 NUEVA FUNCIÓN: obtiene el nombre de la compañía asociada a un contacto usando REST + axios
-async function getCompanyNameForContact(contactId, token) {
-  try {
-    // Primero, obtén las asociaciones de la API de Asociaciones v4
-    const associationsUrl = `https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/companies`;
-    const associationsResponse = await axios.get(associationsUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+  for (const company of allCompanies) {
+    try {
+      const existingCompany = await hubspotClientMirror.crm.companies.basicApi.getById(company.id, ['name']);
+      console.log(`Company ${company.properties.name} already exists, updating`);
+      await hubspotClientMirror.crm.companies.basicApi.update(company.id, {
+        properties: { name: company.properties.name, hs_lastmodifieddate: company.properties.hs_lastmodifieddate }
+      });
+    } catch (error) {
+      if (error.status === 404) {
+        console.log(`Creating new company ${company.properties.name}`);
+        await hubspotClientMirror.crm.companies.basicApi.create({
+          properties: { name: company.properties.name, hs_lastmodifieddate: company.properties.hs_lastmodifieddate }
+        });
       }
-    });
+    }
+    console.log(`Company synced: ${company.properties.name}`);
+  }
+  console.log(`Companies synced: ${allCompanies.length}`);
+  return allCompanies.length;
+}
 
-    if (!associationsResponse.data.results || associationsResponse.data.results.length === 0) {
-      return null; // No hay compañías asociadas
+async function syncContacts() {
+  console.log('Starting full sync of contacts from Source HubSpot');
+  let after = undefined;
+  let allContacts = [];
+
+  do {
+    const apiResponse = await hubspotClientSource.crm.contacts.basicApi.getPage(100, after, ['email', 'company_name', 'character_id']);
+    allContacts = allContacts.concat(apiResponse.results);
+    after = apiResponse.paging ? apiResponse.paging.next.after : undefined;
+  } while (after);
+
+  for (const contact of allContacts) {
+    if (!contact.properties.character_id) {
+      console.warn(`Skipping contact ${contact.properties.email} due to missing character_id`);
+      continue;
     }
 
-    const companyId = associationsResponse.data.results[0].toObjectId;
-
-    // Luego, obtén los detalles de la compañía
-    const companyDetailsUrl = `https://api.hubapi.com/crm/v3/objects/companies/${companyId}?properties=name`;
-    const companyResponse = await axios.get(companyDetailsUrl, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+    try {
+      const existingContact = await hubspotClientMirror.crm.contacts.basicApi.getById(contact.id, ['email', 'character_id', 'company_name']);
+      console.log(`Updating existing contact: ${contact.id}`);
+      await hubspotClientMirror.crm.contacts.basicApi.update(contact.id, {
+        properties: {
+          email: contact.properties.email,
+          character_id: contact.properties.character_id,
+          company_name: contact.properties.company_name || null
+        }
+      });
+    } catch (error) {
+      if (error.status === 404) {
+        console.log(`Creating new contact ${contact.properties.email}`);
+        const newContact = await hubspotClientMirror.crm.contacts.basicApi.create({
+          properties: {
+            email: contact.properties.email,
+            character_id: contact.properties.character_id,
+            company_name: contact.properties.company_name || null
+          }
+        });
+        await associateCompany(newContact.id, contact.properties.company_name);
       }
-    });
+    }
+    console.log(`Contact synced: character_id ${contact.properties.character_id}, hubspotId ${contact.id}`);
+  }
+  console.log(`Contacts synced: ${allContacts.length}`);
+}
 
-    return companyResponse.data.properties.name || null;
-  } catch (err) {
-    // Es importante loguear el error para entender por qué falla
-    logger.error('Failed to fetch associated company for contact', { contactId, error: err.message, stack: err.stack });
-    return null; // Devuelve null si hay un error para no detener la sincronización
+async function associateCompany(contactId, companyName) {
+  if (!companyName) return;
+
+  try {
+    const companies = await hubspotClientMirror.crm.companies.basicApi.getPage(100, undefined, ['name']);
+    const company = companies.results.find(c => c.properties.name === companyName);
+    if (company) {
+      await hubspotClientMirror.crm.companies.associationsApi.create(
+        company.id,
+        'company_to_contact',
+        contactId,
+        { associationTypeId: 1 }
+      );
+      console.log(`Contact ${contactId} associated with company ${companyName}`);
+    } else {
+      console.warn(`Company ${companyName} not found for association, skipping`);
+    }
+  } catch (error) {
+    console.warn(`Failed to associate company ${companyName} with contact ${contactId}, skipping: ${error.message}`);
   }
 }
 
-app.post('/sync', async (req, res) => {
-  logger.info('Starting full sync to Mirror account');
-
-  const sourceClient = new hubspot.Client({ accessToken: process.env.HUBSPOT_SOURCE_TOKEN });
-
+async function fullSync() {
   try {
-    // Sync contacts
-    let contactsSynced = 0;
-    let after = undefined;
-
-    do {
-      logger.info('Fetching batch of contacts from Source HubSpot', { after });
-
-      const contactsResponse = await sourceClient.crm.contacts.basicApi.getPage(100, after, [
-        'character_id',
-        'email',
-        'firstname',
-        'lastname',
-        'character_status',
-        'character_species',
-        'character_gender',
-      ]);
-
-      for (const contact of contactsResponse.results) {
-        // 👉 AÑADIR ESTA VALIDACIÓN AQUÍ
-        if (!contact.properties.character_id) {
-          logger.warn('Skipping contact due to missing character_id', { hubspotId: contact.id, email: contact.properties.email });
-          continue; // Pasa al siguiente contacto en el bucle
-        }
-
-        try {
-          // Asegúrate de que contact.id está presente antes de llamar a getCompanyNameForContact
-          const company_name = contact.id
-            ? await getCompanyNameForContact(contact.id, process.env.HUBSPOT_SOURCE_TOKEN)
-            : null;
-
-          const contactData = {
-            ...contact.properties,
-            company_name
-          };
-
-          await upsertContact(contactData);
-          contactsSynced++;
-
-          logger.info('Contact synced', {
-            character_id: contact.properties.character_id,
-            hubspotId: contact.id
-          });
-        } catch (error) {
-          logger.error('Failed to sync contact', {
-            character_id: contact.properties.character_id,
-            error: error.message,
-            stack: error.stack
-          });
-        }
-      }
-
-      after = contactsResponse.paging?.next?.after;
-    } while (after);
-
-    logger.info('Contacts synced', { count: contactsSynced });
-
-    // Sync companies (esta sección no necesita cambios en este momento)
-    let companiesSynced = 0;
-    after = undefined;
-
-    do {
-      logger.info('Fetching batch of companies from Source HubSpot', { after });
-
-      const companiesResponse = await sourceClient.crm.companies.basicApi.getPage(100, after, ['name']);
-
-      for (const company of companiesResponse.results) {
-        try {
-          await upsertCompany(company.properties);
-          companiesSynced++;
-
-          logger.info('Company synced', {
-            name: company.properties.name,
-            hubspotId: company.id
-          });
-        } catch (error) {
-          logger.error('Failed to sync company', {
-            name: company.properties.name,
-            error: error.message,
-            stack: error.stack
-          });
-        }
-      }
-
-      after = companiesResponse.paging?.next?.after;
-    } while (after);
-
-    logger.info('Companies synced', { count: companiesSynced });
-
-    res.status(200).json({ message: `Synced ${contactsSynced} contacts and ${companiesSynced} companies` });
+    await syncCompanies();
+    await syncContacts();
   } catch (error) {
-    logger.error('Sync failed critically', { error: error.message, stack: error.stack });
-    res.status(500).json({ error: error.message });
+    console.error('Error during full sync:', error.message);
   }
+}
+
+const express = require('express');
+const app = express();
+app.use(express.json());
+
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`Server running on port ${process.env.PORT || 3000}`);
+  fullSync();
 });
 
-app.listen(port, () => {
-  logger.info(`Server running on port ${port}`);
+app.post('/webhook', async (req, res) => {
+  const payload = req.body;
+  console.log('Processing webhook payload', { payload });
+  if (payload.objectType === 'contact') {
+    await syncContacts(); // Opcional: solo sincronizar el contacto específico
+  } else if (payload.objectType === 'company') {
+    await syncCompanies(); // Opcional: solo sincronizar la empresa específica
+  }
+  res.sendStatus(200);
 });
