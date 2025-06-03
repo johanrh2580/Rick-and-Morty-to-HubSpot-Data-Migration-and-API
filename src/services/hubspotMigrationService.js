@@ -259,16 +259,16 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
 
     // 1. Create or Update Contact in HubSpot
     const contactResult = await findOrCreateContact(hubspotClient, character);
-    contactHubspotId = contactResult?.id || null;
-    if (contactHubspotId) {
-        processedContactHubspotIds.add(contactHubspotId);
+    if (contactResult && contactResult.id) {
+        processedContactHubspotIds.add(contactResult.id); // Añade solo el ID al Set
         if (contactResult.created) {
             contactsCreated++;
         } else {
             contactsUpdated++;
         }
     }
-
+    contactHubspotId = contactResult?.id || null;
+    
     // 2. Create or Update Company in HubSpot (if location data is available)
     const locationUrl = character.origin?.url; // Use optional chaining for safety
 
@@ -300,10 +300,10 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
   }
 
   console.log('\nINFO: Rick and Morty to HubSpot migration process completed!');
-  console.log(SUMMARY: Total Contacts processed (created/updated): ${processedContactHubspotIds.size});
-  console.log(SUMMARY: Total Unique Companies processed (created/updated): ${processedCompanyHubspotIds.size});
-  console.log(SUMMARY: Total Contacts processed: Created: ${contactsCreated}, Updated: ${contactsUpdated});
-
+  console.log(`SUMMARY: Total Contacts processed: ${processedContactHubspotIds.size}`);
+  console.log(`SUMMARY:   - Contacts created: ${contactsCreated}`);
+  console.log(`SUMMARY:   - Contacts updated: ${contactsUpdated}`);
+  console.log(`SUMMARY: Total Unique Companies processed: ${processedCompanyHubspotIds.size}`);
 }
 
 module.exports = {
