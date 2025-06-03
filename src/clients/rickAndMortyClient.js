@@ -1,75 +1,67 @@
+// rickAndMortyClient.js
 const axios = require('axios');
 const https = require('https');
 
 const BASE_URL = 'https://rickandmortyapi.com/api';
 
-// Create an HTTPS agent for axios to handle SSL/TLS connections.
-// rejectUnauthorized: false is used ONLY for debugging purposes in development environments.
-// In a production environment, this should be true, or proper certificate handling should be implemented.
 const agent = new https.Agent({
-  rejectUnauthorized: false,
+  rejectUnauthorized: false, // Keep for dev, set to true for production with proper certs
 });
 
-/**
- * Fetches a character by their ID from the Rick and Morty API.
- * @param {number} characterId - The ID of the character to fetch.
- * @returns {Promise<object>} - A promise that resolves to the character data.
- * @throws {Error} - Throws an error if the API request fails.
- */
-async function getCharacterById(characterId) {
+// Helper for retries
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000; // 1 second initial delay
+
+async function fetchDataWithRetry(url, config, retries = 0) {
   try {
-    const response = await axios.get(`${BASE_URL}/character/${characterId}`, {
-      httpsAgent: agent,
-      timeout: 10000, // Add a 10-second timeout
-    });
+    const response = await axios.get(url, config);
     return response.data;
   } catch (error) {
-    console.error(`ERROR: Failed to fetch character ${characterId}:`, error.message);
+    if (retries < MAX_RETRIES && (error.code === 'ECONNABORTED' || error.response?.status === 429 || error.response?.status >= 500)) {
+      console.warn(`WARN: Retrying API call to ${url} (attempt <span class="math-inline">\{retries \+ 1\}/</span>{MAX_RETRIES}). Error: ${error.message}`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS * Math.pow(2, retries)));
+      return fetchDataWithRetry(url, config, retries + 1);
+    }
+    throw error; // Re-throw if max retries reached or it's a non-retryable error
+  }
+}
+
+async function getCharacterById(characterId) {
+  try {
+    const data = await fetchDataWithRetry(`<span class="math-inline">\{BASE\_URL\}/character/</span>{characterId}`, {
+      httpsAgent: agent,
+      timeout: 10000,
+    });
+    return data;
+  } catch (error) {
+    console.error(`ERROR: Failed to fetch character ${characterId} after multiple retries:`, error.message);
     throw new Error(`Could not retrieve character with ID ${characterId}.`);
   }
 }
 
-/**
- * Fetches location data from a given URL.
- * @param {string} locationUrl - The URL of the location to fetch.
- * @returns {Promise<object>} - A promise that resolves to the location data.
- * @throws {Error} - Throws an error if the API request fails.
- */
 async function getLocationByUrl(locationUrl) {
   try {
-    const response = await axios.get(locationUrl, {
+    const data = await fetchDataWithRetry(locationUrl, {
       httpsAgent: agent,
-      timeout: 10000, // Add a 10-second timeout
+      timeout: 10000,
     });
-    return response.data;
+    return data;
   } catch (error) {
-    console.error(`ERROR: Failed to fetch location from URL ${locationUrl}:`, error.message);
+    console.error(`ERROR: Failed to fetch location from URL ${locationUrl} after multiple retries:`, error.message);
     throw new Error(`Could not retrieve location from URL ${locationUrl}.`);
   }
 }
 
-/**
- * Fetches characters information (including paginated results) from the Rick and Morty API.
- * This function can fetch a specific page or the initial info object.
- * @param {number} [page=null] - The page number to fetch. If null, fetches the first page to get metadata.
- * @returns {Promise<object>} - A promise that resolves to the response data (info and results).
- * @throws {Error} - Throws an error if the API request fails.
- */
-async function getCharactersInfo(page = null) {
-  let url = `${BASE_URL}/character`;
-  if (page !== null) {
-    url += `?page=${page}`;
-  }
-
+async function getCharactersInfo() {
   try {
-    const response = await axios.get(url, {
+    const data = await fetchDataWithRetry(`${BASE_URL}/character`, {
       httpsAgent: agent,
-      timeout: 10000, // Add a 10-second timeout
+      timeout: 10000,
     });
-    return response.data; // Return the entire response data (includes info and results)
+    return data.info;
   } catch (error) {
-    console.error(`ERROR: Failed to fetch characters info (page ${page !== null ? page : 'initial'}):`, error.message);
-    throw new Error(`Could not retrieve characters info for page ${page !== null ? page : 'initial'}.`);
+    console.error('ERROR: Failed to fetch characters info after multiple retries:', error.message);
+    throw new Error('Could not retrieve characters info.');
   }
 }
 
