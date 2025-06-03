@@ -1,7 +1,7 @@
 const express = require('express');
 const hubspot = require('@hubspot/api-client');
 const winston = require('winston');
-const webhookRoutes = require('./routes/webhookRoutes');
+const webhookRoutes = require('backend-developer-test/src/routes/webhookRoutes');
 
 
 const app = express();
