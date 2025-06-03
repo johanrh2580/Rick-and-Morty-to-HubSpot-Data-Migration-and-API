@@ -1,3 +1,4 @@
+/*
 const hubspot = require('@hubspot/api-client');
 const { isPrime } = require('../utils/math');
 const { getCharacterById, getLocationByUrl, getCharactersInfo } = require('../clients/rickAndMortyClient');
@@ -21,7 +22,7 @@ const characterToContactMapping = (character) => {
   // Generate a valid email format
   const cleanName = character.name
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, ''); 
+    .replace(/[^a-z0-9]/g, '');  
 
   let email = `${cleanName}${character.id}@rickandmorty.com`;
   
@@ -301,12 +302,13 @@ async function migrateRickAndMortyToHubspot(hubspotClient) {
 
   console.log('\nINFO: Rick and Morty to HubSpot migration process completed!');
   console.log(`SUMMARY: Total Contacts processed: ${processedContactHubspotIds.size}`);
-  console.log(`SUMMARY:   - Successfully created: ${contactsCreated}`);
-  console.log(`SUMMARY:   - Successfully updated: ${contactsUpdated}`);
-  console.log(`SUMMARY:   - Failed attempts: ${contactsFailed}`);
+  console.log(`SUMMARY:    - Successfully created: ${contactsCreated}`);
+  console.log(`SUMMARY:    - Successfully updated: ${contactsUpdated}`);
+  console.log(`SUMMARY:    - Failed attempts: ${contactsFailed}`);
   console.log(`SUMMARY: Total Unique Companies processed: ${processedCompanyHubspotIds.size}`);
 }
 
 module.exports = {
   migrateRickAndMortyToHubspot,
 };
+*/
