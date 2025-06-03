@@ -58,19 +58,18 @@ app.post('/sync', async (req, res) => {
         try {
           // Obtener asociaciones de la API v4
           // Corrección: Usar getAssociations para la API v4 de asociaciones
-          const associations = await sourceClient.crm.associations.v3.associationsApi.getAll(
-            'contacts',
+          const associations = await sourceClient.crm.contacts.associationsApi.getAll(
             contact.id,
             'companies'
           );
-
+          
           let company_name = null;
           if (associations.results.length > 0) {
-            const companyId = associations.results[0].toObjectId;
-            // Obtener el nombre de la compañía asociada
+            const companyId = associations.results[0].id;
             const company = await sourceClient.crm.companies.basicApi.getById(companyId, ['name']);
             company_name = company.properties.name;
           }
+
 
           // Preparar los datos del contacto incluyendo el nombre de la compañía
           const contactData = {
