@@ -4,7 +4,7 @@
   "description": "Rick and Morty to HubSpot Data Migration and API",
   "main": "src/app.js",
   "scripts": {
-    "start": "node src/app.js",  <-- ¡Esta línea es la importante!
+    "start": "node src/app.js",
     "dev": "node src/app.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
